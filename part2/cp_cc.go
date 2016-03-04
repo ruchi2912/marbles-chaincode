@@ -1,4 +1,17 @@
-
+/*
+Copyright 2016 IBM
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+Licensed Materials - Property of IBM
+© Copyright IBM Corp. 2016
+*/
 package main
 
 import (
@@ -17,17 +30,18 @@ var accountsKey = "accounts"
 
 var recentLeapYear = 2016
 
+// SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
 }
 
-func generateCUSIPSuffix(issueDate string ) (string, error) {
+func generateCUSIPSuffix(issueDate string, days int) (string, error) {
 
 	t, err := msToTime(issueDate)
 	if err != nil {
 		return "", err
 	}
 
-	maturityDate := t.AddDate(0, 0, 15)
+	maturityDate := t.AddDate(0, 0, days)
 	month := int(maturityDate.Month())
 	day := maturityDate.Day()
 
@@ -55,13 +69,16 @@ func msToTime(ms string) (time.Time, error) {
 
 type Owner struct {
 	Company string    `json:"company"`
-	
+	Quantity int      `json:"quantity"`
 }
 
 type CP struct {
 	CUSIP     string  `json:"cusip"`
 	Ticker    string  `json:"ticker"`
 	Par       float64 `json:"par"`
+	Qty       int     `json:"qty"`
+	Discount  float64 `json:"discount"`
+	Maturity  int     `json:"maturity"`
 	Owners    []Owner `json:"owner"`
 	Issuer    string  `json:"issuer"`
 	IssueDate string  `json:"issueDate"`
@@ -78,6 +95,8 @@ type Transaction struct {
 	CUSIP       string   `json:"cusip"`
 	FromCompany string   `json:"fromCompany"`
 	ToCompany   string   `json:"toCompany"`
+	Quantity    int      `json:"quantity"`
+	Discount    float64  `json:"discount"`
 }
 
 func (t *SimpleChaincode) createAccounts(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
@@ -123,7 +142,32 @@ func (t *SimpleChaincode) createAccounts(stub *shim.ChaincodeStub, args []string
 
 func (t *SimpleChaincode) issueCommercialPaper(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
 
-	
+	/*		0
+		json
+	  	{
+			"ticker":  "string",
+			"par": 0.00,
+			"qty": 10,
+			"discount": 7.5,
+			"maturity": 30,
+			"owners": [ // This one is not required
+				{
+					"company": "company1",
+					"quantity": 5
+				},
+				{
+					"company": "company3",
+					"quantity": 3
+				},
+				{
+					"company": "company4",
+					"quantity": 2
+				}
+			],				
+			"issuer":"company2",
+			"issueDate":"1456161763790"  (current time in milliseconds as a string)
+		}
+	*/
 	//need one arg
 	if len(args) != 1 {
 		fmt.Println("error invalid arguments")
@@ -160,11 +204,11 @@ func (t *SimpleChaincode) issueCommercialPaper(stub *shim.ChaincodeStub, args []
 	// Set the issuer to be the owner of all quantity
 	var owner Owner;
 	owner.Company = cp.Issuer
-	owner.Quantity = 1
+	owner.Quantity = cp.Qty
 	
 	cp.Owners = append(cp.Owners, owner)
 
-	suffix, err := generateCUSIPSuffix(cp.IssueDate)
+	suffix, err := generateCUSIPSuffix(cp.IssueDate, cp.Maturity)
 	if err != nil {
 		fmt.Println("Error generating cusip");
 		return nil, errors.New("Error generating CUSIP")
@@ -250,11 +294,11 @@ func (t *SimpleChaincode) issueCommercialPaper(stub *shim.ChaincodeStub, args []
 			return nil, errors.New("Error unmarshalling cp " + cp.CUSIP)
 		}
 		
-		cprx.Qty = 2;
+		cprx.Qty = cprx.Qty + cp.Qty;
 		
 		for key, val := range cprx.Owners {
 			if val.Company == cp.Issuer {
-				cprx.Owners[key].Quantity += 1
+				cprx.Owners[key].Quantity += cp.Qty
 				break
 			}
 		}
@@ -424,7 +468,8 @@ func (t *SimpleChaincode) transferPaper(stub *shim.ChaincodeStub, args []string)
 	for _, owner := range cp.Owners {
 		if owner.Company == tr.FromCompany {
 			ownerFound = true
-			quantity = 1
+			quantity = owner.Quantity
+		}
 	}
 	
 	// If fromCompany doesn't own this paper
@@ -444,7 +489,7 @@ func (t *SimpleChaincode) transferPaper(stub *shim.ChaincodeStub, args []string)
 	}
 	
 	amountToBeTransferred := float64(tr.Quantity) * cp.Par
-	//amountToBeTransferred -= (amountToBeTransferred) * (3.75 / 100.0) * (float64(15) / 360.0)
+	amountToBeTransferred -= (amountToBeTransferred) * (cp.Discount / 100.0) * (float64(cp.Maturity) / 360.0)
 	
 	// If toCompany doesn't have enough cash to buy the papers
 	if toCompany.CashBalance < amountToBeTransferred {
@@ -461,13 +506,13 @@ func (t *SimpleChaincode) transferPaper(stub *shim.ChaincodeStub, args []string)
 	for key, owner := range cp.Owners {
 		if owner.Company == tr.FromCompany {
 			fmt.Println("Reducing Quantity from the FromCompany")
-			//cp.Owners[key].Quantity -= 1
+			cp.Owners[key].Quantity -= tr.Quantity
 //			owner.Quantity -= tr.Quantity
 		}
 		if owner.Company == tr.ToCompany {
 			fmt.Println("Increasing Quantity from the ToCompany")
 			toOwnerFound = true
-	//		cp.Owners[key].Quantity += tr.Quantity
+			cp.Owners[key].Quantity += tr.Quantity
 //			owner.Quantity += tr.Quantity
 		}
 	}
@@ -475,7 +520,7 @@ func (t *SimpleChaincode) transferPaper(stub *shim.ChaincodeStub, args []string)
 	if toOwnerFound == false {
 		var newOwner Owner
 		fmt.Println("As ToOwner was not found, appending the owner to the CP")
-		newOwner.Quantity = 1
+		newOwner.Quantity = tr.Quantity
 		newOwner.Company = tr.ToCompany
 		cp.Owners = append(cp.Owners, newOwner)
 	}
