@@ -140,7 +140,7 @@ func (t *SimpleChaincode) createAccounts(stub *shim.ChaincodeStub, args []string
 
 }
 
-func (t *SimpleChaincode) issueCommercialPaper(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
+func (t *SimpleChaincode) issueCommercialPaperru(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
 
 	/*		0
 		json
@@ -639,10 +639,10 @@ func (t *SimpleChaincode) Query(stub *shim.ChaincodeStub, function string, args 
 func (t *SimpleChaincode) Run(stub *shim.ChaincodeStub, function string, args []string) ([]byte, error) {
 	fmt.Println("run is running " + function)
 	
-	if function == "issueCommercialPaper" {
-		fmt.Println("Firing issueCommercialPaper");
+	if function == "issueCommercialPaperru" {
+		fmt.Println("Firing issueCommercialPaperru");
 		//Create an asset with some value
-		return t.issueCommercialPaper(stub, args)
+		return t.issueCommercialPaperru(stub, args)
 	} else if function == "transferPaper" {
 		fmt.Println("Firing cretransferPaperateAccounts");
 		return t.transferPaper(stub, args)
